@@ -201,11 +201,22 @@ std::set<std::string> GetOldRcPaths(
         internal::FindRcAlongsideBinary(cwd, path_to_binary);
     candidate_bazelrc_paths = {workspace_rc, binary_rc, system_bazelrc_path};
   }
-  string user_bazelrc_path = internal::FindLegacyUserBazelrc(
-      SearchUnaryOption(startup_args, "--bazelrc", /* warn_if_dupe */ true),
-      workspace);
-  if (!user_bazelrc_path.empty()) {
-    candidate_bazelrc_paths.push_back(user_bazelrc_path);
+  vector<std::string> cmd_line_rc_files = SearchNaryOption(startup_args, "--bazelrc");
+  // Divide the cases where the vector is empty vs not, as `FindLegacyUserBazelrc` has a case
+  // for rc_file to be a nullptr.
+  if (cmd_line_rc_files.empty()){
+    string user_bazelrc_path = internal::FindLegacyUserBazelrc(nullptr, workspace);
+    if (!user_bazelrc_path.empty()) {
+      candidate_bazelrc_paths.push_back(user_bazelrc_path);
+    }
+  }
+  else {
+    for (auto& rc_file : cmd_line_rc_files) {
+      string user_bazelrc_path = internal::FindLegacyUserBazelrc(rc_file.c_str(), workspace);
+      if (!user_bazelrc_path.empty()) {
+        candidate_bazelrc_paths.push_back(user_bazelrc_path);
+      }
+    }
   }
   // DedupeBlazercPaths returns paths whose canonical path could be computed,
   // therefore these paths must exist.
@@ -370,20 +381,18 @@ blaze_exit_code::ExitCode OptionProcessor::GetRcFiles(
 
   // Get the command-line provided rc, passed as --bazelrc or nothing if the
   // flag is absent.
-  const char* cmd_line_rc_file =
-      SearchUnaryOption(cmd_line->startup_args, "--bazelrc",
-                        /* warn_if_dupe */ true);
-  if (cmd_line_rc_file != nullptr) {
-    string absolute_cmd_line_rc = blaze::AbsolutePathFromFlag(cmd_line_rc_file);
-    // Unlike the previous 3 paths, where we ignore it if the file does not
-    // exist or is unreadable, since this path is explicitly passed, this is an
-    // error. Check this condition here.
-    if (!blaze_util::CanReadFile(absolute_cmd_line_rc)) {
-      BAZEL_LOG(ERROR) << "Error: Unable to read .bazelrc file '"
-                       << absolute_cmd_line_rc << "'.";
-      return blaze_exit_code::BAD_ARGV;
-    }
-    rc_files.push_back(absolute_cmd_line_rc);
+  vector<std::string> cmd_line_rc_files = SearchNaryOption(cmd_line->startup_args, "--bazelrc");
+  for (auto& rc_file : cmd_line_rc_files) {
+        string absolute_cmd_line_rc = blaze::AbsolutePathFromFlag(rc_file);
+        // Unlike the previous 3 paths, where we ignore it if the file does not
+        // exist or is unreadable, since this path is explicitly passed, this is an
+        // error. Check this condition here.
+        if (!blaze_util::CanReadFile(absolute_cmd_line_rc)) {
+          BAZEL_LOG(ERROR) << "Error: Unable to read .bazelrc file '"
+                           << absolute_cmd_line_rc << "'.";
+          return blaze_exit_code::BAD_ARGV;
+        }
+        rc_files.push_back(absolute_cmd_line_rc);
   }
 
   // Log which files we're looking for before removing duplicates and

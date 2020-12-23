@@ -14,6 +14,7 @@
 
 #include "src/main/cpp/blaze_util.h"
 
+#include <algorithm>
 #include <fcntl.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -35,6 +36,7 @@
 namespace blaze {
 
 using std::map;
+using std::min;
 using std::string;
 using std::vector;
 
@@ -72,6 +74,32 @@ bool GetNullaryOption(const char *arg, const char *key) {
   }
 
   return true;
+}
+
+std::vector<std::string> SearchNaryOption(const vector<string>& args,
+                              const char *key) {
+  vector<std::string> values;
+  for (vector<string>::size_type i = 0; i < args.size(); ++i) {
+    if (args[i] == "--") {
+      // If the current argument is "--", all following args are target names.
+      // If 'key' was not found, 'value' is nullptr and we can return that.
+      // If 'key' was found exactly once, then 'value' has the value and again
+      // we can return that.
+      // If 'key' was found more than once then we could not have reached this
+      // line, because we would have broken out of the loop when 'key' was found
+      // the second time.
+      return values;
+    }
+    const char* result = GetUnaryOption(args[i].c_str(),
+                                        args[std::min(i + 1, args.size() -1)].c_str(),
+                                        key);
+    if (result != nullptr) {
+      // 'key' was found and 'result' has its value.
+      values.push_back(result);
+    }
+  }
+
+  return values;
 }
 
 const char* SearchUnaryOption(const vector<string>& args,
